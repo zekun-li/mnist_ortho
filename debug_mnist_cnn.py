@@ -17,7 +17,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv2D, MaxPooling2D
 from keras import backend as K
-from orthdense import OrthDense
+from debug_orthdense1 import OrthDense
 
 batch_size = 128
 num_classes = 10
@@ -78,7 +78,7 @@ model.compile(loss=keras.losses.categorical_crossentropy,
               metrics=['accuracy'])
 model.summary()
 
-model.fit(x_train, y_train,
+model.fit(x_train[0:100], y_train[0:100],
           batch_size=batch_size,
           epochs=epochs,
           verbose=1,

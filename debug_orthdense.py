@@ -16,21 +16,22 @@ from keras.utils.generic_utils import has_arg
 from keras.legacy import interfaces
 
 expm = slinalg.Expm()
-class OrthDense( Dense ) :
+class OrthDense( Layer ) :
     def __init__(self, units,
                  activation=None,
                  use_bias=True,
-                 decorr_initializer='glorot_uniform',
+                 #decorr_initializer='ones',
                  kernel_initializer='glorot_uniform',
                  bias_initializer='zeros',
-                 decorr_regularizer=None,
+                 #decorr_regularizer=None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
-                 decorr_constraint=None,
+                 #decorr_constraint=None,
                  kernel_constraint=None,
                  bias_constraint=None,
                  **kwargs):
+        '''
         super(OrthDense, self).__init__(units,
                                         activation=activation,
                                         use_bias=use_bias,
@@ -42,9 +43,11 @@ class OrthDense( Dense ) :
                                         kernel_constraint=kernel_constraint,
                                         bias_constraint=bias_constraint,
                                         **kwargs)
-        self.decorr_initializer = initializers.get(decorr_initializer)
-        self.decorr_regularizer = regularizers.get(decorr_regularizer)
-        self.decorr_constraint = constraints.get(decorr_constraint)
+        '''
+        super(OrthDense, self).__init__(**kwargs)
+        #self.decorr_initializer = initializers.get(decorr_initializer)
+        #self.decorr_regularizer = regularizers.get(decorr_regularizer)
+        #self.decorr_constraint = constraints.get(decorr_constraint)
 
         self.units = units
         self.activation = activations.get(activation)
@@ -82,12 +85,13 @@ class OrthDense( Dense ) :
             
         #    self.decorr.append(elem_i)
         #self.decorr = np.array(self.decorr)
+        '''
         self.decorr = self.add_weight(shape = (nb_orth_elems,),
                                      initializer=self.decorr_initializer,
                                      name='decorr' ,
                                      regularizer=self.decorr_regularizer,
                                      constraint=self.decorr_constraint)
-
+        '''
 
         if self.use_bias:
             self.bias = self.add_weight(shape=(self.units,),
@@ -115,19 +119,43 @@ class OrthDense( Dense ) :
         #triu_mat[np.triu_indices(n,1)[::-1]] = triu_mat[np.triu_indices(n,1)[::-1]] * -1 # skew-symmetric
         triu_mat = tt.set_subtensor(triu_mat[np.triu_indices(n,1)[::-1]], triu_mat[np.triu_indices(n,1)[::-1]] * -1)
         # matrix exponential
-        orth_mat = expm( triu_mat )
+        #orth_mat = expm( triu_mat )
+        orth_mat = triu_mat
         return orth_mat
-
+    
+    '''
+    def _get_orthogonal_matrix(self) :
+        # 1. create upper triangular matrix using self.decorr
+        # 2. create lower triangular matrix using -self.decorr
+        # 3. add them up and take matrix exponential
+        n = self.units
+        n_triu_entries =  (self.units-1)*self.units / 2 
+        r = tt.arange(n)
+        tmp_mat = r[np.newaxis, :] + (n_triu_entries - n - (r * (r + 1)) / 2)[::-1, np.newaxis]
+        #triu_index_matrix = np.zeros([n, n], dtype=np.int32)
+        triu_index_matrix = tt.triu(tmp_mat) + tt.triu(tmp_mat).T - tt.diag(tt.diagonal(tmp_mat))
+        sym_matrix = self.decorr[triu_index_matrix]
+        orth_mat = sym_matrix
+        return orth_mat
+    '''
     def call(self, inputs):
-        orth_mat = self._get_orthogonal_matrix()
+        #orth_mat = self._get_orthogonal_matrix()
         output_step1 = K.dot(inputs, self.kernel)
-        output_step2 = output_step1
         #output_step2 = K.dot(output_step1, orth_mat)
         if self.use_bias:
-            output2 = K.bias_add(output_step2, self.bias)
+            #output = K.bias_add(output_step2, self.bias)
+            output_step1 = K.bias_add(output_step1, self.bias)
         if self.activation is not None:
-            output2 = self.activation(output_step2)
-        return output2
+            #output = self.activation(output_step2)
+            output_step1 = self.activation(output_step1)
+        return output_step1
+
+    def compute_output_shape(self, input_shape):
+        assert input_shape and len(input_shape) >= 2
+        assert input_shape[-1]
+        output_shape = list(input_shape)
+        output_shape[-1] = self.units
+        return tuple(output_shape)
 
     def get_config(self):
         config = {
@@ -141,9 +169,9 @@ class OrthDense( Dense ) :
             'activity_regularizer': regularizers.serialize(self.activity_regularizer),
             'kernel_constraint': constraints.serialize(self.kernel_constraint),
             'bias_constraint': constraints.serialize(self.bias_constraint),
-            'decorr_initializer': initializers.serialize( self.decorr_initializer ),
-            'decorr_regularizer': regularizers.serialize( self.decorr_regularizer ),
-            'decorr_constraint': constraints.serialize(self.decorr_constraint ) 
+            #'decorr_initializer': initializers.serialize( self.decorr_initializer ),
+            #'decorr_regularizer': regularizers.serialize( self.decorr_regularizer ),
+            #'decorr_constraint': constraints.serialize(self.decorr_constraint ) 
         }
         base_config = super(OrthDense, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

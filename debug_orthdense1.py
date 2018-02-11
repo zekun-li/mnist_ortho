@@ -16,7 +16,7 @@ from keras.utils.generic_utils import has_arg
 from keras.legacy import interfaces
 
 expm = slinalg.Expm()
-class OrthDense( Dense ) :
+class OrthDense( Layer ) :
     def __init__(self, units,
                  activation=None,
                  use_bias=True,
@@ -31,17 +31,19 @@ class OrthDense( Dense ) :
                  kernel_constraint=None,
                  bias_constraint=None,
                  **kwargs):
-        super(OrthDense, self).__init__(units,
-                                        activation=activation,
-                                        use_bias=use_bias,
-                                        kernel_initializer=kernel_initializer,
-                                        bias_initializer=bias_initializer,
-                                        kernel_regularizer=kernel_regularizer,
-                                        bias_regularizer=bias_regularizer,
-                                        activity_regularizer=activity_regularizer,
-                                        kernel_constraint=kernel_constraint,
-                                        bias_constraint=bias_constraint,
-                                        **kwargs)
+        #super(OrthDense, self).__init__(units,
+        #                                activation=activation,
+        #                                use_bias=use_bias,
+        #                                kernel_initializer=kernel_initializer,
+        #                                bias_initializer=bias_initializer,
+        #                                kernel_regularizer=kernel_regularizer,
+        #                                bias_regularizer=bias_regularizer,
+        #                                activity_regularizer=activity_regularizer,
+        #                                kernel_constraint=kernel_constraint,
+        #                                bias_constraint=bias_constraint,
+        #                                **kwargs)
+        
+        super(OrthDense, self).__init__(**kwargs) 
         self.decorr_initializer = initializers.get(decorr_initializer)
         self.decorr_regularizer = regularizers.get(decorr_regularizer)
         self.decorr_constraint = constraints.get(decorr_constraint)
@@ -121,13 +123,21 @@ class OrthDense( Dense ) :
     def call(self, inputs):
         orth_mat = self._get_orthogonal_matrix()
         output_step1 = K.dot(inputs, self.kernel)
-        output_step2 = output_step1
-        #output_step2 = K.dot(output_step1, orth_mat)
+        #output_step2 = output_step1
+        output_step2 = K.dot(output_step1, orth_mat)
         if self.use_bias:
             output2 = K.bias_add(output_step2, self.bias)
         if self.activation is not None:
             output2 = self.activation(output_step2)
         return output2
+
+    def compute_output_shape(self, input_shape):
+        assert input_shape and len(input_shape) >= 2
+        assert input_shape[-1]
+        output_shape = list(input_shape)
+        output_shape[-1] = self.units
+        return tuple(output_shape)
+
 
     def get_config(self):
         config = {
