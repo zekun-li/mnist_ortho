@@ -20,10 +20,13 @@ from keras import backend as K
 #from orthdense import OrthDense
 from ortho import Ortho
 
+K.set_image_data_format('channels_first')
+
 batch_size = 128
 num_classes = 10
-epochs = 50
-save_dir = os.path.join(os.getcwd(), 'saved_models')                                                                                                                                                       
+epochs =1 
+#epochs = 50
+save_dir = os.path.join(os.getcwd(), 'saved_models')       
 model_name = 'keras_mnist_trained_model.h5'
 if_visualize = False
 
@@ -66,14 +69,15 @@ model.add(Conv2D(32, kernel_size=(3, 3),
                  activation='relu',
                  input_shape=input_shape))
 model.add(Conv2D(64, (3, 3), activation='relu'))
+if K.image_data_format() == 'channels_first':
+    model.add(Ortho(axis = 1))
+else:
+    model.add(Ortho(axis = -1))
 model.add(MaxPooling2D(pool_size=(2, 2)))
-#model.add(MaxPooling2D(pool_size=(2, 2)))
-#model.add(MaxPooling2D(pool_size=(2, 2)))
-#model.add(Ortho())
 model.add(Dropout(0.25))
 model.add(Flatten())
 model.add(Dense(128, activation='relu'))
-model.add(Ortho())
+#model.add(Ortho())
 model.add(Dropout(0.5))
 model.add(Dense(num_classes,activation = 'softmax'))
 #model.add(OrthDense(num_classes, activation='softmax'))
@@ -94,8 +98,8 @@ print('Test accuracy:', score[1])
 
 
 # Save model and weights                                                                                                                               
-if not os.path.isdir(save_dir):                                                                                                                                                         
-    os.makedirs(save_dir)                                                                                                                                                                             
+if not os.path.isdir(save_dir):                                                     
+    os.makedirs(save_dir)                                                                         
 model_path = os.path.join(save_dir, model_name)                                                                                                                                                            
 model.save(model_path)                                                                                                                                                                                     
 print('Saved trained model at %s ' % model_path) 

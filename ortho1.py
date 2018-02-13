@@ -18,7 +18,6 @@ from keras.legacy import interfaces
 expm = slinalg.Expm()
 class Ortho( Layer ) :
     def __init__(self, 
-                 axis = -1,
                  activation=None,
                  decorr_initializer='glorot_uniform',
                  decorr_regularizer=None,
@@ -27,22 +26,26 @@ class Ortho( Layer ) :
                  **kwargs):
 
         super(Ortho, self).__init__(**kwargs)
-        self.axis = axis
         self.decorr_initializer = initializers.get(decorr_initializer)
         self.decorr_regularizer = regularizers.get(decorr_regularizer)
         self.decorr_constraint = constraints.get(decorr_constraint)
 
         self.activation = activations.get(activation)
         self.activity_regularizer = regularizers.get(activity_regularizer)
+        self.input_spec = InputSpec(min_ndim=2)
         self.supports_masking = True
 
 
     def build( self, input_shape ) :
         assert len(input_shape) >= 2
 
-        input_dim = input_shape[self.axis]
-        n = input_dim
-        nb_orth_elems = (n-1)*n / 2
+        input_dim = input_shape[-1]
+        if len(input_shape) == 2: # Dense
+            n = input_dim
+            nb_orth_elems = (n -1) * n /2
+        else: # Conv2D # 2dpooling
+            n = np.prod(input_shape[1:])
+            nb_orth_elems = (n-1)*n / 2
 
         self.decorr = self.add_weight(shape = (nb_orth_elems,),
                                      initializer=self.decorr_initializer,
@@ -51,7 +54,7 @@ class Ortho( Layer ) :
                                      constraint=self.decorr_constraint)
 
         self.ortho_n = n
-        self.input_spec = InputSpec(ndim = len(input_shape), axes={self.axis: input_dim})
+        self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
         self.built = True
     
     def _get_orthogonal_matrix(self) :
@@ -67,47 +70,21 @@ class Ortho( Layer ) :
         triu_mat = self.decorr[triu_index_matrix] # symmetric matrix with diagonal values be the first element of self.decorr
         triu_mat = tt.extra_ops.fill_diagonal(triu_mat, 0) # set diagonal values zero
         triu_mat = tt.set_subtensor(triu_mat[np.triu_indices(n,1)[::-1]], triu_mat[np.triu_indices(n,1)[::-1]] * -1)
+
+        part1 = tt.identity_like(triu_mat) + triu_mat
+        part2 = tt.nlinalg.MatrixInverse()( tt.identity_like(triu_mat) - triu_mat)
+        orth_mat = K.dot(part1, part2)
         # matrix exponential
-        orth_mat = expm( triu_mat )
+        #orth_mat = expm( triu_mat )
         return orth_mat
-    
-    '''
-    def _get_orthogonal_matrix(self) :
-        # 1. create upper triangular matrix using self.decorr
-        # 2. create lower triangular matrix using -self.decorr
-        # 3. add them up and take matrix exponential
-        n = self.units
-        n_triu_entries =  (self.units-1)*self.units / 2 
-        r = tt.arange(n)
-        tmp_mat = r[np.newaxis, :] + (n_triu_entries - n - (r * (r + 1)) / 2)[::-1, np.newaxis]
-        #triu_index_matrix = np.zeros([n, n], dtype=np.int32)
-        triu_index_matrix = tt.triu(tmp_mat) + tt.triu(tmp_mat).T - tt.diag(tt.diagonal(tmp_mat))
-        sym_matrix = self.decorr[triu_index_matrix]
-        orth_mat = sym_matrix
-        return orth_mat
-    '''
+
     def call(self, inputs):
         orth_mat = self._get_orthogonal_matrix()
-        input_shape = K.int_shape(inputs)
-        ndim = len(input_shape)
-        reduction_axes = list(range(len(input_shape)))
-        del reduction_axes[self.axis]
-        #broadcast_shape = [1] * len(input_shape)
-        #broadcast_shape[self.axis] = input_shape[self.axis]
-        permute_ptn = reduction_axes + [self.axis]
-        permute_back_ptn = list(range(ndim))[:-1]
-        permute_back_ptn.insert(self.axis, ndim-1)
-        # Determines whether broadcasting is needed.
-        needs_permute = (sorted(reduction_axes) != list(range(ndim))[:-1])
-        if needs_permute:
-            output = K.dot(K.permute_dimensions(inputs,permute_ptn), orth_mat)
-            output = K.permute_dimensions(output, permute_back_ptn)
-        else:
-            output = K.dot(inputs, orth_mat)
+        output = K.dot(inputs.reshape((inputs.shape[0],-1)), orth_mat)
         
         if self.activation is not None:
             output = self.activation(output)
-        return output
+        return output.reshape(inputs.shape)
 
 
     def compute_output_shape(self, input_shape):
