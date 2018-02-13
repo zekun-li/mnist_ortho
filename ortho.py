@@ -19,18 +19,28 @@ expm = slinalg.Expm()
 class Ortho( Layer ) :
     def __init__(self, 
                  axis = -1,
+                 use_bias = True,
                  activation=None,
                  decorr_initializer='glorot_uniform',
                  decorr_regularizer=None,
+                 bias_initializer='zeros',
+                 bias_regularizer=None,
+                 bias_constraint=None,
                  activity_regularizer=None,
                  decorr_constraint=None,
                  **kwargs):
 
         super(Ortho, self).__init__(**kwargs)
         self.axis = axis
+        self.use_bias = use_bias
         self.decorr_initializer = initializers.get(decorr_initializer)
         self.decorr_regularizer = regularizers.get(decorr_regularizer)
         self.decorr_constraint = constraints.get(decorr_constraint)
+
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.bias_constraint = constraints.get(bias_constraint)
+
 
         self.activation = activations.get(activation)
         self.activity_regularizer = regularizers.get(activity_regularizer)
@@ -49,6 +59,15 @@ class Ortho( Layer ) :
                                      name='decorr' ,
                                      regularizer=self.decorr_regularizer,
                                      constraint=self.decorr_constraint)
+
+        if self.use_bias:
+            self.bias = self.add_weight(shape=input_shape[1:],
+                                        initializer=self.bias_initializer,
+                                        name='bias',
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint)
+        else:
+            self.bias = None
 
         self.ortho_n = n
         self.input_spec = InputSpec(ndim = len(input_shape), axes={self.axis: input_dim})
@@ -99,6 +118,10 @@ class Ortho( Layer ) :
         permute_back_ptn.insert(self.axis, ndim-1)
         # Determines whether broadcasting is needed.
         needs_permute = (sorted(reduction_axes) != list(range(ndim))[:-1])
+
+        if self.use_bias:
+            inputs = inputs + K.expand_dims(self.bias, axis = 0)
+
         if needs_permute:
             output = K.dot(K.permute_dimensions(inputs,permute_ptn), orth_mat)
             output = K.permute_dimensions(output, permute_back_ptn)
@@ -112,20 +135,20 @@ class Ortho( Layer ) :
 
     def compute_output_shape(self, input_shape):
         assert input_shape and len(input_shape) >= 2
-        assert input_shape[-1]
+        assert input_shape[self.axis]
         output_shape = list(input_shape)
-        output_shape[-1] = input_shape[-1]
+        #output_shape[-1] = input_shape[-1]
         return tuple(output_shape)
 
     def get_config(self):
         config = {
             'activation': activations.serialize(self.activation),
             'axis': self.axis,
-            #'use_bias': self.use_bias,
-            #'bias_initializer': initializers.serialize(self.bias_initializer),
-            #'bias_regularizer': regularizers.serialize(self.bias_regularizer),
+            'use_bias': self.use_bias,
+            'bias_initializer': initializers.serialize(self.bias_initializer),
+            'bias_regularizer': regularizers.serialize(self.bias_regularizer),
+            'bias_constraint': constraints.serialize(self.bias_constraint),
             'activity_regularizer': regularizers.serialize(self.activity_regularizer),
-            #'bias_constraint': constraints.serialize(self.bias_constraint),
             'decorr_initializer': initializers.serialize( self.decorr_initializer ),
             'decorr_regularizer': regularizers.serialize( self.decorr_regularizer ),
             'decorr_constraint': constraints.serialize(self.decorr_constraint ) 

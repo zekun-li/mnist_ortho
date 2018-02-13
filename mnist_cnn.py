@@ -69,15 +69,15 @@ model.add(Conv2D(32, kernel_size=(3, 3),
                  activation='relu',
                  input_shape=input_shape))
 model.add(Conv2D(64, (3, 3), activation='relu'))
-if K.image_data_format() == 'channels_first':
-    model.add(Ortho(axis = 1))
-else:
-    model.add(Ortho(axis = -1))
+#if K.image_data_format() == 'channels_first':
+#    model.add(Ortho(axis = 1))
+#else:
+#    model.add(Ortho(axis = -1))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Dropout(0.25))
 model.add(Flatten())
 model.add(Dense(128, activation='relu'))
-#model.add(Ortho())
+model.add(Ortho())
 model.add(Dropout(0.5))
 model.add(Dense(num_classes,activation = 'softmax'))
 #model.add(OrthDense(num_classes, activation='softmax'))

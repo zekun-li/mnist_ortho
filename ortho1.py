@@ -75,22 +75,7 @@ class Ortho( Layer ) :
         #orth_mat = expm( triu_mat )
         return orth_mat
 
-    
-    '''
-    def _get_orthogonal_matrix(self) :
-        # 1. create upper triangular matrix using self.decorr
-        # 2. create lower triangular matrix using -self.decorr
-        # 3. add them up and take matrix exponential
-        n = self.units
-        n_triu_entries =  (self.units-1)*self.units / 2 
-        r = tt.arange(n)
-        tmp_mat = r[np.newaxis, :] + (n_triu_entries - n - (r * (r + 1)) / 2)[::-1, np.newaxis]
-        #triu_index_matrix = np.zeros([n, n], dtype=np.int32)
-        triu_index_matrix = tt.triu(tmp_mat) + tt.triu(tmp_mat).T - tt.diag(tt.diagonal(tmp_mat))
-        sym_matrix = self.decorr[triu_index_matrix]
-        orth_mat = sym_matrix
-        return orth_mat
-    '''
+
     def call(self, inputs):
         orth_mat = self._get_orthogonal_matrix()
         input_shape = K.int_shape(inputs)
