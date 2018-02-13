@@ -120,6 +120,7 @@ class Ortho( Layer ) :
     def get_config(self):
         config = {
             'activation': activations.serialize(self.activation),
+            'axis': self.axis,
             #'use_bias': self.use_bias,
             #'bias_initializer': initializers.serialize(self.bias_initializer),
             #'bias_regularizer': regularizers.serialize(self.bias_regularizer),
