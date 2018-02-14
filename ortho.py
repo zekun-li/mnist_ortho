@@ -18,7 +18,8 @@ from keras.legacy import interfaces
 expm = slinalg.Expm()
 class Ortho( Layer ) :
     def __init__(self, 
-                 axis = -1,
+                 axis = -1, # along which axis to do the transform
+                 ortho_type = 1,# take from two values {1,2} 1: EXP_SYM, 2: INV_SYM
                  use_bias = True,
                  activation=None,
                  decorr_initializer='glorot_uniform',
@@ -32,6 +33,7 @@ class Ortho( Layer ) :
 
         super(Ortho, self).__init__(**kwargs)
         self.axis = axis
+        self.ortho_type = ortho_type
         self.use_bias = use_bias
         self.decorr_initializer = initializers.get(decorr_initializer)
         self.decorr_regularizer = regularizers.get(decorr_regularizer)
@@ -50,18 +52,20 @@ class Ortho( Layer ) :
     def build( self, input_shape ) :
         assert len(input_shape) >= 2
 
-        input_dim = input_shape[self.axis]
+        input_dim = input_shape[self.axis] # skew-symmetic matrix has size (input_dim, input_dim)
         n = input_dim
         nb_orth_elems = (n-1)*n / 2
 
+        # vector tensor to hold the elements for constructing skew-symmetric matrix
         self.decorr = self.add_weight(shape = (nb_orth_elems,),
                                      initializer=self.decorr_initializer,
                                      name='decorr' ,
                                      regularizer=self.decorr_regularizer,
                                      constraint=self.decorr_constraint)
 
+        # shape of bias is (w,h,c) for Conv2d and (len_feat,) for Dense
         if self.use_bias:
-            self.bias = self.add_weight(shape=input_shape[1:],
+            self.bias = self.add_weight(shape=input_dim,
                                         initializer=self.bias_initializer,
                                         name='bias',
                                         regularizer=self.bias_regularizer,
@@ -69,11 +73,14 @@ class Ortho( Layer ) :
         else:
             self.bias = None
 
-        self.ortho_n = n
+        self.ortho_n = n # dimension of skew-sym matrix
         self.input_spec = InputSpec(ndim = len(input_shape), axes={self.axis: input_dim})
         self.built = True
     
-    def _get_orthogonal_matrix(self) :
+    def _get_orthogonal_matrix_exp(self) :
+        # A: skew symmetric matrix
+        # O: orthogonal mattrix
+        # O = EXP(A)
         # 1. create upper triangular matrix using self.decorr
         # 2. create lower triangular matrix using -self.decorr
         # 3. add them up and take matrix exponential
@@ -90,37 +97,49 @@ class Ortho( Layer ) :
         orth_mat = expm( triu_mat )
         return orth_mat
     
-    '''
-    def _get_orthogonal_matrix(self) :
+    
+    def _get_orthogonal_matrix_inv(self) :
+        # A: skew symmetric matrix
+        # O: orthogonal mattrix
+        # O = (I + A)(I - A)^-1
         # 1. create upper triangular matrix using self.decorr
         # 2. create lower triangular matrix using -self.decorr
         # 3. add them up and take matrix exponential
-        n = self.units
-        n_triu_entries =  (self.units-1)*self.units / 2 
-        r = tt.arange(n)
-        tmp_mat = r[np.newaxis, :] + (n_triu_entries - n - (r * (r + 1)) / 2)[::-1, np.newaxis]
-        #triu_index_matrix = np.zeros([n, n], dtype=np.int32)
-        triu_index_matrix = tt.triu(tmp_mat) + tt.triu(tmp_mat).T - tt.diag(tt.diagonal(tmp_mat))
-        sym_matrix = self.decorr[triu_index_matrix]
-        orth_mat = sym_matrix
+
+        n = self.ortho_n
+        num_triu_entries =  (n-1)*n / 2 
+        triu_index_matrix = np.zeros([n, n], dtype=np.int32)
+        triu_index_matrix[np.triu_indices(n,1)] = np.arange(num_triu_entries)
+        triu_index_matrix[np.triu_indices(n,1)[::-1]] = np.arange(num_triu_entries)
+        triu_mat = self.decorr[triu_index_matrix] # symmetric matrix with diagonal values be the first element of self.decorr
+        triu_mat = tt.extra_ops.fill_diagonal(triu_mat, 0) # set diagonal values zero
+        triu_mat = tt.set_subtensor(triu_mat[np.triu_indices(n,1)[::-1]], triu_mat[np.triu_indices(n,1)[::-1]] * -1)
+
+        part1 = tt.identity_like(triu_mat) + triu_mat
+        part2 = tt.nlinalg.MatrixInverse()( tt.identity_like(triu_mat) - triu_mat)
+        orth_mat = K.dot(part1, part2)
         return orth_mat
-    '''
+
+
+
     def call(self, inputs):
-        orth_mat = self._get_orthogonal_matrix()
+        if self.ortho_type == 1:
+            orth_mat = self._get_orthogonal_matrix_exp()
+        else:
+            orth_mat = self._get_orthogonal_matrix_inv()
+
         input_shape = K.int_shape(inputs)
         ndim = len(input_shape)
         reduction_axes = list(range(len(input_shape)))
         del reduction_axes[self.axis]
-        #broadcast_shape = [1] * len(input_shape)
-        #broadcast_shape[self.axis] = input_shape[self.axis]
-        permute_ptn = reduction_axes + [self.axis]
-        permute_back_ptn = list(range(ndim))[:-1]
+        permute_ptn = reduction_axes + [self.axis] # permutation pattern
+        permute_back_ptn = list(range(ndim))[:-1] # permutate back
         permute_back_ptn.insert(self.axis, ndim-1)
-        # Determines whether broadcasting is needed.
+        # Determines whether permutation is needed.
         needs_permute = (sorted(reduction_axes) != list(range(ndim))[:-1])
 
-        if self.use_bias:
-            inputs = inputs + K.expand_dims(self.bias, axis = 0)
+        if self.use_bias: # inputs + bias before the orthogonal transform (also before permutation)
+            inputs =  K.bias_add(inputs, self.bias)
 
         if needs_permute:
             output = K.dot(K.permute_dimensions(inputs,permute_ptn), orth_mat)
@@ -133,7 +152,8 @@ class Ortho( Layer ) :
         return output
 
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape): 
+        # output_shape = input_shape
         assert input_shape and len(input_shape) >= 2
         assert input_shape[self.axis]
         output_shape = list(input_shape)
@@ -145,6 +165,7 @@ class Ortho( Layer ) :
             'activation': activations.serialize(self.activation),
             'axis': self.axis,
             'use_bias': self.use_bias,
+            'ortho_type': self.ortho_type,
             'bias_initializer': initializers.serialize(self.bias_initializer),
             'bias_regularizer': regularizers.serialize(self.bias_regularizer),
             'bias_constraint': constraints.serialize(self.bias_constraint),
