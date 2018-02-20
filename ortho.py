@@ -12,7 +12,7 @@ from keras.engine import Layer
 from keras.utils.generic_utils import func_dump
 from keras.utils.generic_utils import func_load
 from keras.utils.generic_utils import deserialize_keras_object
-from keras.utils.generic_utils import has_arg
+#from keras.utils.generic_utils import has_arg
 from keras.legacy import interfaces
 
 expm = slinalg.Expm()
@@ -63,7 +63,7 @@ class Ortho( Layer ) :
                                      regularizer=self.decorr_regularizer,
                                      constraint=self.decorr_constraint)
 
-        # shape of bias is (w,h,c) for Conv2d and (len_feat,) for Dense
+        # shape of bias is (len_feat,) for Dense
         if self.use_bias:
             self.bias = self.add_weight(shape=input_dim,
                                         initializer=self.bias_initializer,

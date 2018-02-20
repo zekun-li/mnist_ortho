@@ -9,8 +9,10 @@ from __future__ import print_function
 
 import os
 #gpu_id = '5'
+os.environ["KERAS_BACKEND"] = 'theano'
+os.environ["CUDA_VISIBLE_DEVICES"] = os.environ['SGE_GPU'] 
 #os.environ["THEANO_FLAGS"] = "device=gpu%s,floatX=float32" % gpu_id
-os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float32"
+#os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float32"
 
 import keras
 from keras.datasets import mnist
@@ -20,16 +22,20 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras import backend as K
 #from orthdense import OrthDense
 from ortho import Ortho
+import numpy as np
 
 K.set_image_data_format('channels_first')
+from theano import ifelse
 
 batch_size = 128
 num_classes = 10
-epochs =1 
+epochs =80 
 #epochs = 50
 save_dir = os.path.join(os.getcwd(), 'saved_models')       
 model_name = 'keras_mnist_trained_model.h5'
 if_visualize = False
+if_ortho_dense = True
+if_ortho_conv = False
 
 # input image dimensions
 img_rows, img_cols = 28, 28
@@ -70,15 +76,18 @@ model.add(Conv2D(32, kernel_size=(3, 3),
                  activation='relu',
                  input_shape=input_shape))
 model.add(Conv2D(64, (3, 3), activation='relu'))
-if K.image_data_format() == 'channels_first':
-    model.add(Ortho(axis = 1))
-else:
-    model.add(Ortho(axis = -1))
+
+if if_ortho_conv :
+    if K.image_data_format() == 'channels_first':
+        model.add(Ortho(axis = 1))
+    else:
+        model.add(Ortho(axis = -1))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Dropout(0.25))
 model.add(Flatten())
 model.add(Dense(128, activation='relu'))
-#model.add(Ortho())
+if if_ortho_dense:
+    model.add(Ortho())
 model.add(Dropout(0.5))
 model.add(Dense(num_classes,activation = 'softmax'))
 #model.add(OrthDense(num_classes, activation='softmax'))
@@ -88,7 +97,7 @@ model.compile(loss=keras.losses.categorical_crossentropy,
               metrics=['accuracy'])
 model.summary()
 
-model.fit(x_train, y_train,
+H = model.fit(x_train, y_train,
           batch_size=batch_size,
           epochs=epochs,
           verbose=1,
@@ -106,3 +115,5 @@ model.save(model_path)
 print('Saved trained model at %s ' % model_path) 
 
 
+# save history object
+np.save('mnist_ortho.log',H)
